@@ -1,7 +1,9 @@
+import math
 import random
 from collections import Counter, deque
 import pygame
 from game.button import ChoiceButton
+from game.icons import draw_icon
 
 class GameEngine:
     def __init__(self, width, height, target_score=3):
@@ -45,6 +47,16 @@ class GameEngine:
         self.display_duration = 1800
         self.showing_result = False
 
+        # Reveal animation: both hands shake in sync to "ROCK... PAPER... SCISSORS..." before the picks are shown
+        self.revealing = False
+        self.reveal_start_time = 0
+        self.countdown_words = ["ROCK...", "PAPER...", "SCISSORS..."]
+        self.beat_duration = 350
+        self.reveal_duration = self.beat_duration * len(self.countdown_words)
+        self.shake_height = 14
+        self.pop_duration = 180
+        self.last_outcome = None
+
         self.font_title = pygame.font.SysFont(None, 36)
         self.font_hud = pygame.font.SysFont(None, 26)
         self.font_arena = pygame.font.SysFont(None, 32)
@@ -72,13 +84,23 @@ class GameEngine:
         return random.choice(self.choices)
 
     def play_round(self, choice):
-        if self.match_over:
+        if self.match_over or self.revealing:
             return
 
         self.player_choice = choice
         self.cpu_choice = self.choose_cpu_move()
         self.player_history.append(choice)  # recorded after the CPU picks, so it never sees the current move
 
+        # Scores are only applied once the countdown animation finishes (see update -> resolve_round)
+        self.revealing = True
+        self.showing_result = False
+        self.last_outcome = None
+        self.reveal_start_time = pygame.time.get_ticks()
+        self.result_text = self.countdown_words[0]
+        self.result_color = (235, 235, 240)
+
+    def resolve_round(self):
+        self.revealing = False
         outcome = self.determine_winner(self.player_choice, self.cpu_choice)
         if outcome == "PLAYER":
             self.player_score += 1
@@ -92,6 +114,7 @@ class GameEngine:
             self.result_text = f"It's a Draw! Both picked {self.player_choice}."
             self.result_color = (240, 210, 80)
 
+        self.last_outcome = outcome
         self.showing_result = True
         self.round_resolved_time = pygame.time.get_ticks()
 
@@ -113,6 +136,8 @@ class GameEngine:
         self.match_over = False
         self.match_winner = None
         self.player_history.clear()
+        self.revealing = False
+        self.last_outcome = None
 
     def handle_event(self, event):
         if self.match_over:
@@ -131,12 +156,22 @@ class GameEngine:
             return
 
         now = pygame.time.get_ticks()
+        if self.revealing:
+            elapsed = now - self.reveal_start_time
+            if elapsed >= self.reveal_duration:
+                self.resolve_round()
+            else:
+                beat = min(elapsed // self.beat_duration, len(self.countdown_words) - 1)
+                self.result_text = self.countdown_words[beat]
+            return
+
         if self.showing_result and (now - self.round_resolved_time >= self.display_duration):
             self.player_choice = None
             self.cpu_choice = None
             self.result_text = "Make your move!"
             self.result_color = (190, 195, 205)
             self.showing_result = False
+            self.last_outcome = None
 
     def render(self, screen):
         screen.fill((24, 28, 36))
@@ -154,22 +189,68 @@ class GameEngine:
 
         pygame.draw.line(screen, (45, 52, 66), (25, 82), (self.width - 25, 82), 2)
 
-        p_str = self.player_choice if self.player_choice else "--"
-        c_str = self.cpu_choice if self.cpu_choice else "--"
-
-        arena_p = self.font_arena.render(f"Your Pick:  {p_str}", True, (225, 225, 230))
-        arena_c = self.font_arena.render(f"CPU Pick:  {c_str}", True, (225, 225, 230))
-        screen.blit(arena_p, (self.width // 2 - arena_p.get_width() // 2, 115))
-        screen.blit(arena_c, (self.width // 2 - arena_c.get_width() // 2, 155))
+        self.render_arena(screen)
 
         res_surf = self.font_arena.render(self.result_text, True, self.result_color)
-        screen.blit(res_surf, (self.width // 2 - res_surf.get_width() // 2, 205))
+        screen.blit(res_surf, (self.width // 2 - res_surf.get_width() // 2, 232))
 
         for btn in self.buttons:
             btn.render(screen)
 
         if self.match_over:
             self.render_match_over(screen)
+
+    def render_arena(self, screen):
+        now = pygame.time.get_ticks()
+        icon_cy = 152
+        icon_size = 72
+
+        shake = 0
+        if self.revealing:
+            phase = ((now - self.reveal_start_time) % self.beat_duration) / self.beat_duration
+            shake = -int(abs(math.sin(phase * math.pi)) * self.shake_height)
+
+        pop = 1.0
+        if self.showing_result:
+            t = (now - self.round_resolved_time) / self.pop_duration
+            if t < 1:
+                pop = 0.6 + 0.4 * max(0.0, t)
+
+        slots = [
+            ("YOU", self.player_choice, self.width // 2 - 120, (100, 180, 255), "PLAYER"),
+            ("CPU", self.cpu_choice, self.width // 2 + 120, (255, 120, 120), "CPU"),
+        ]
+        for label, choice, cx, label_color, side in slots:
+            label_surf = self.font_hud.render(label, True, label_color)
+            screen.blit(label_surf, (cx - label_surf.get_width() // 2, 88))
+
+            ring_color = (60, 68, 84)
+            if self.last_outcome == side:
+                ring_color = (80, 230, 120)
+            elif self.last_outcome == "TIE":
+                ring_color = (240, 210, 80)
+            elif self.last_outcome is not None:
+                ring_color = (240, 80, 80)
+            pygame.draw.circle(screen, (34, 40, 52), (cx, icon_cy), 46)
+            pygame.draw.circle(screen, ring_color, (cx, icon_cy), 46, 3)
+
+            if self.revealing:
+                # Both sides shake a closed fist together during the countdown
+                draw_icon(screen, "ROCK", cx, icon_cy + shake, icon_size)
+                name = "..."
+            elif choice:
+                draw_icon(screen, choice, cx, icon_cy, int(icon_size * pop))
+                name = choice
+            else:
+                q_surf = self.font_banner.render("?", True, (90, 98, 115))
+                screen.blit(q_surf, (cx - q_surf.get_width() // 2, icon_cy - q_surf.get_height() // 2))
+                name = "--"
+
+            name_surf = self.font_hud.render(name, True, (225, 225, 230))
+            screen.blit(name_surf, (cx - name_surf.get_width() // 2, 204))
+
+        vs_surf = self.font_arena.render("VS", True, (150, 155, 170))
+        screen.blit(vs_surf, (self.width // 2 - vs_surf.get_width() // 2, icon_cy - vs_surf.get_height() // 2))
 
     def render_match_over(self, screen):
         overlay = pygame.Surface((self.width, self.height), pygame.SRCALPHA)
