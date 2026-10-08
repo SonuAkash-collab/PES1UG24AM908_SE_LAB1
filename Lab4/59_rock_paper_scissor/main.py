@@ -3,6 +3,7 @@ from game.game_engine import GameEngine
 
 WIDTH, HEIGHT = 560, 360
 FPS = 60
+TARGET_SCORE = 3  # First to this many round wins takes the match
 
 
 def main():
@@ -11,7 +12,7 @@ def main():
     pygame.display.set_caption("Rock Paper Scissors - Pygame Edition")
     clock = pygame.time.Clock()
 
-    engine = GameEngine(WIDTH, HEIGHT)
+    engine = GameEngine(WIDTH, HEIGHT, target_score=TARGET_SCORE)
 
     running = True
     while running:

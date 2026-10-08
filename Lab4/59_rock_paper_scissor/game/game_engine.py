@@ -3,9 +3,10 @@ import pygame
 from game.button import ChoiceButton
 
 class GameEngine:
-    def __init__(self, width, height):
+    def __init__(self, width, height, target_score=3):
         self.width = width
         self.height = height
+        self.target_score = max(1, int(target_score))
 
         self.choices = ["ROCK", "PAPER", "SCISSORS"]
         btn_w, btn_h = 130, 50
@@ -28,6 +29,9 @@ class GameEngine:
         self.player_score = 0
         self.cpu_score = 0
 
+        self.match_over = False
+        self.match_winner = None
+
         self.round_resolved_time = 0
         self.display_duration = 1800
         self.showing_result = False
@@ -35,6 +39,7 @@ class GameEngine:
         self.font_title = pygame.font.SysFont(None, 36)
         self.font_hud = pygame.font.SysFont(None, 26)
         self.font_arena = pygame.font.SysFont(None, 32)
+        self.font_banner = pygame.font.SysFont(None, 48)
 
     def determine_winner(self, player, cpu):
         if player == cpu:
@@ -51,6 +56,9 @@ class GameEngine:
         return rules.get((player, cpu), "TIE")
 
     def play_round(self, choice):
+        if self.match_over:
+            return
+
         self.player_choice = choice
         self.cpu_choice = random.choice(self.choices)
 
@@ -70,7 +78,30 @@ class GameEngine:
         self.showing_result = True
         self.round_resolved_time = pygame.time.get_ticks()
 
+        if self.player_score >= self.target_score:
+            self.match_over = True
+            self.match_winner = "PLAYER"
+        elif self.cpu_score >= self.target_score:
+            self.match_over = True
+            self.match_winner = "CPU"
+
+    def reset_match(self):
+        self.player_score = 0
+        self.cpu_score = 0
+        self.player_choice = None
+        self.cpu_choice = None
+        self.result_text = "Make your move!"
+        self.result_color = (220, 225, 235)
+        self.showing_result = False
+        self.match_over = False
+        self.match_winner = None
+
     def handle_event(self, event):
+        if self.match_over:
+            if event.type == pygame.KEYDOWN and event.key == pygame.K_r:
+                self.reset_match()
+            return
+
         if event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
             for btn in self.buttons:
                 if btn.contains(event.pos):
@@ -78,6 +109,9 @@ class GameEngine:
                     break
 
     def update(self):
+        if self.match_over:
+            return
+
         now = pygame.time.get_ticks()
         if self.showing_result and (now - self.round_resolved_time >= self.display_duration):
             self.player_choice = None
@@ -97,6 +131,9 @@ class GameEngine:
         screen.blit(p_surf, (35, 52))
         screen.blit(c_surf, (self.width - c_surf.get_width() - 35, 52))
 
+        goal_surf = self.font_hud.render(f"First to {self.target_score}", True, (170, 175, 190))
+        screen.blit(goal_surf, (self.width // 2 - goal_surf.get_width() // 2, 52))
+
         pygame.draw.line(screen, (45, 52, 66), (25, 82), (self.width - 25, 82), 2)
 
         p_str = self.player_choice if self.player_choice else "--"
@@ -112,3 +149,34 @@ class GameEngine:
 
         for btn in self.buttons:
             btn.render(screen)
+
+        if self.match_over:
+            self.render_match_over(screen)
+
+    def render_match_over(self, screen):
+        overlay = pygame.Surface((self.width, self.height), pygame.SRCALPHA)
+        overlay.fill((10, 12, 18, 200))
+        screen.blit(overlay, (0, 0))
+
+        if self.match_winner == "PLAYER":
+            banner_text = "YOU WIN THE MATCH!"
+            banner_color = (80, 230, 120)
+        else:
+            banner_text = "CPU WINS THE MATCH!"
+            banner_color = (240, 80, 80)
+
+        banner_surf = self.font_banner.render(banner_text, True, banner_color)
+        score_surf = self.font_arena.render(
+            f"Final Score  {self.player_score} - {self.cpu_score}", True, (235, 235, 240)
+        )
+        prompt_surf = self.font_hud.render("Press R to play again", True, (190, 195, 205))
+
+        cy = self.height // 2
+        panel = pygame.Rect(0, 0, 420, 170)
+        panel.center = (self.width // 2, cy)
+        pygame.draw.rect(screen, (30, 35, 46), panel, border_radius=12)
+        pygame.draw.rect(screen, banner_color, panel, width=3, border_radius=12)
+
+        screen.blit(banner_surf, (self.width // 2 - banner_surf.get_width() // 2, cy - 60))
+        screen.blit(score_surf, (self.width // 2 - score_surf.get_width() // 2, cy - 5))
+        screen.blit(prompt_surf, (self.width // 2 - prompt_surf.get_width() // 2, cy + 40))
