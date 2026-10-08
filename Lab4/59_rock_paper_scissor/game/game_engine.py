@@ -1,4 +1,5 @@
 import random
+from collections import Counter, deque
 import pygame
 from game.button import ChoiceButton
 
@@ -32,6 +33,14 @@ class GameEngine:
         self.match_over = False
         self.match_winner = None
 
+        # Adaptive AI: remember the player's recent throws and counter their favourite
+        self.history_size = 6        # how many recent player moves to remember
+        self.min_history = 3         # moves needed before the CPU starts adapting
+        self.favor_threshold = 0.5   # a move is a "habit" if it's at least this share of history
+        self.adapt_chance = 0.75     # how often the CPU plays the counter once a habit is found
+        self.player_history = deque(maxlen=self.history_size)
+        self.counter_move = {"ROCK": "PAPER", "PAPER": "SCISSORS", "SCISSORS": "ROCK"}
+
         self.round_resolved_time = 0
         self.display_duration = 1800
         self.showing_result = False
@@ -55,12 +64,20 @@ class GameEngine:
         }
         return rules.get((player, cpu), "TIE")
 
+    def choose_cpu_move(self):
+        if len(self.player_history) >= self.min_history:
+            favorite, count = Counter(self.player_history).most_common(1)[0]
+            if count / len(self.player_history) >= self.favor_threshold and random.random() < self.adapt_chance:
+                return self.counter_move[favorite]
+        return random.choice(self.choices)
+
     def play_round(self, choice):
         if self.match_over:
             return
 
         self.player_choice = choice
-        self.cpu_choice = random.choice(self.choices)
+        self.cpu_choice = self.choose_cpu_move()
+        self.player_history.append(choice)  # recorded after the CPU picks, so it never sees the current move
 
         outcome = self.determine_winner(self.player_choice, self.cpu_choice)
         if outcome == "PLAYER":
@@ -95,6 +112,7 @@ class GameEngine:
         self.showing_result = False
         self.match_over = False
         self.match_winner = None
+        self.player_history.clear()
 
     def handle_event(self, event):
         if self.match_over:
