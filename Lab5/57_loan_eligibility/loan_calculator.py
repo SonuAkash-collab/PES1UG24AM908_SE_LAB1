@@ -26,6 +26,7 @@ VALID_LOAN_TYPES = ("home", "car", "personal")
 BUREAU_HOST = "ftp.creditbureau.example"
 SMTP_HOST = os.environ.get("LOAN_SMTP_HOST", "localhost")
 
+
 def calculate_emi(principal, annual_rate, years):
     """Return the monthly EMI for a loan of `principal` over `years`."""
     monthly_rate = annual_rate / 12
@@ -34,6 +35,7 @@ def calculate_emi(principal, annual_rate, years):
         return principal / months
     growth = (1 + monthly_rate) ** months
     return principal * monthly_rate * growth / (growth - 1)
+
 
 # pylint: disable-next=too-many-arguments
 def check_eligibility(age, income, credit_score, existing_emi, loan_type,
@@ -55,6 +57,7 @@ def check_eligibility(age, income, credit_score, existing_emi, loan_type,
         return False
     return existing_emi / income <= MAX_FOIR
 
+
 def max_loan_amount(income, existing_emi, annual_rate, years):
     """Return the largest loan whose EMI fits within the FOIR headroom."""
     available = income * MAX_FOIR - existing_emi
@@ -67,6 +70,7 @@ def max_loan_amount(income, existing_emi, annual_rate, years):
     growth = (1 + monthly_rate) ** months
     return available * (growth - 1) / (monthly_rate * growth)
 
+
 def amortisation_schedule(principal, annual_rate, years):
     """Return a list of (month, interest, balance) rows for the loan."""
     emi = calculate_emi(principal, annual_rate, years)
@@ -78,18 +82,25 @@ def amortisation_schedule(principal, annual_rate, years):
         rows.append((month, round(interest, 2), round(balance, 2)))
     return rows
 
+
 def application_id():
     """Return a new, hard-to-guess application ID like LN-12345678."""
     return "LN-" + str(10000000 + secrets.randbelow(90000000))
 
+
 def save_application(name, amount, file="loans.json"):
-    """Add an application to the loan book, write it to `file`, return its ID."""
+    """Add an application to the loan book, save it to `file`, return ID."""
     app_id = application_id()
-    applications[app_id] = {"name": name, "amount": amount, "date": str(datetime.now())}
+    applications[app_id] = {
+        "name": name,
+        "amount": amount,
+        "date": str(datetime.now()),
+    }
     # JSON instead of marshal: loading it can never execute code
     with open(file, "w", encoding="utf-8") as handle:
         json.dump(applications, handle)
     return app_id
+
 
 def load_applications(file="loans.json"):
     """Replace the loan book with the applications stored in `file`."""
@@ -97,6 +108,7 @@ def load_applications(file="loans.json"):
         loaded = json.load(handle)
     applications.clear()
     applications.update(loaded)
+
 
 def upload_to_bureau(report_path, user=None, password=None):
     """Upload a report to the credit bureau over SFTP.
@@ -107,7 +119,8 @@ def upload_to_bureau(report_path, user=None, password=None):
     user = user or os.environ["LOAN_BUREAU_USER"]
     password = password or os.environ["LOAN_BUREAU_PASSWORD"]
     if paramiko is None:
-        raise RuntimeError("upload_to_bureau needs paramiko: pip install paramiko")
+        raise RuntimeError(
+            "upload_to_bureau needs paramiko: pip install paramiko")
     # SFTP (encrypted) instead of plain FTP; unknown host keys are rejected
     client = paramiko.SSHClient()
     client.load_system_host_keys()
@@ -119,6 +132,7 @@ def upload_to_bureau(report_path, user=None, password=None):
     finally:
         client.close()
 
+
 def notify_applicant(email, status):
     """Email the applicant their loan `status` using the local SMTP server."""
     msg = EmailMessage()
@@ -129,11 +143,14 @@ def notify_applicant(email, status):
     with smtplib.SMTP(SMTP_HOST) as server:
         server.send_message(msg)
 
+
 def interest_saved(principal, annual_rate, years, prepayment):
     """Return the total interest saved by prepaying `prepayment` up front."""
     original = calculate_emi(principal, annual_rate, years) * years * 12
-    reduced = calculate_emi(principal - prepayment, annual_rate, years) * years * 12
+    reduced = calculate_emi(
+        principal - prepayment, annual_rate, years) * years * 12
     return original - reduced
+
 
 def risk_band(credit_score):
     """Map a credit score (300-900) to a risk band name."""
@@ -146,6 +163,7 @@ def risk_band(credit_score):
     if credit_score >= 300:
         return "VERY HIGH"
     return "INVALID"
+
 
 def main():
     """Run a short demo of the calculator."""
@@ -163,6 +181,7 @@ def main():
     load_applications()
     print("Applications on file:", len(applications))
     print("Upload to bureau skipped (no network)")
+
 
 if __name__ == "__main__":
     main()
